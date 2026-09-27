@@ -1,0 +1,90 @@
+# OpenEvolve 配置（**架构空间**）—— 与 config.yaml（k 空间）并行存在，互不影响。
+#
+# 为什么开这个空间：
+#   k 轴已被实测榨干。`nas_ptseg/headroom.py` 在 full@300 上算得
+#       最好固定 k(48)             = 0.3365
+#       逐房间 oracle（6 值上限）  = 0.3382   → headroom 仅 +0.0017
+#       σ_fit ≈ 0.0014            → 不足 3σ，搜索只会拿到噪声级收益
+#   于是把搜索对象换成 `agg`（池化方式）与 `graph_space`（图建在特征空间还是坐标空间），
+#   这两者**不改变参数量**，是"同等预算比结构"最干净的轴；k 保留作对照。
+#
+# 评估方式与 k 空间一致：查"物化表"，毫秒级、无偏、无预算敏感性。
+# 表由 `python -m nas_ptseg.arch_table --axes-on k agg graph_space --epochs 50` 生成。
+#
+# 字段名与 openevolve 0.3.2 的 config.py 严格对齐。
+
+# ---------------------------------------------------------------------------
+# 进化规模
+# ---------------------------------------------------------------------------
+max_iterations: 60
+
+# ---------------------------------------------------------------------------
+# LLM
+# ---------------------------------------------------------------------------
+llm:
+  provider: "openai"
+  api_base: "https://api.toskaxy.xyz/v1"
+  api_key: "${DEEPSEEK_API_KEY}"
+  models:
+    - name: "deepseek-v4.1-flash"
+      weight: 1.0
+  temperature: 0.7
+  max_tokens: 16384
+  timeout: 300
+  retries: 3
+  retry_delay: 5
+
+# ---------------------------------------------------------------------------
+# 提示词
+# ---------------------------------------------------------------------------
+prompt:
+  template_dir: "prompts"
+  num_top_programs: 3
+  num_diverse_programs: 2
+  include_artifacts: true
+  max_artifact_bytes: 24576
+  use_template_stochasticity: true
+
+# ---------------------------------------------------------------------------
+# 程序数据库（MAP-Elites + 岛屿模型）
+# ---------------------------------------------------------------------------
+database:
+  in_memory: false
+  db_path: "openevolve_db_arch"
+  log_prompts: true
+
+  # 二维行为分箱：
+  #   worst_room_miou  : 最差验证房间的 mIoU（鲁棒性）
+  #   n_distinct_cfgs  : 策略实际用到的不同配置个数
+  #                      （1 = 对所有房间同一配置；越大 = 越"按房间分化"）
+  # 这一维是**行为描述量**：它逼着搜索同时保留"恒定策略"与"自适应策略"，
+  # 否则很容易早早收敛到某个固定配置、再也探不到自适应形态。
+  # ⚠ 名字必须与 evaluator_arch.py 返回的 metrics 键完全一致。
+  feature_dimensions: ["worst_room_miou", "n_distinct_cfgs"]
+  feature_bins: 5
+
+  population_size: 60
+  num_islands: 3
+  migration_interval: 25
+  migration_rate: 0.15
+  diversity_reference_size: 20
+
+# ---------------------------------------------------------------------------
+# 评估器
+# ---------------------------------------------------------------------------
+evaluator:
+  timeout: 120
+  max_retries: 3
+  cascade_evaluation: false
+
+# ---------------------------------------------------------------------------
+# 早停
+# ---------------------------------------------------------------------------
+early_stopping_metric: "combined_score"
+early_stopping_patience: null
+convergence_threshold: 0.001
+
+# ---------------------------------------------------------------------------
+# 其他
+# ---------------------------------------------------------------------------
+random_seed: 42

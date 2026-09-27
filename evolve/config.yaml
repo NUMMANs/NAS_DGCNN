@@ -1,0 +1,112 @@
+# OpenEvolve 配置 —— NAS × 点云分割（DGCNN 基线）
+#
+# 第一轮的目标**不是**搜索出最优架构，而是验证搜索本身是否可信：
+#     cheap fitness 的排序 能否预测 independent retrain 的排序？
+# 只有这个排序相关性成立，扩大搜索空间与预算才有意义。
+#
+# 关键设计说明见各段注释。字段名与 openevolve 0.3.2 的 config.py 严格对齐。
+
+# ---------------------------------------------------------------------------
+# 进化规模
+# ---------------------------------------------------------------------------
+# 第一轮刻意保持小规模：目的只是拿到足够多的候选去算
+# Spearman(cheap fitness, full retrain fitness)。
+# 秩相关达标（ρ ≥ 0.6）后再把这里调到 500~1000 跑充分搜索。
+max_iterations: 60
+
+# ---------------------------------------------------------------------------
+# LLM
+# ---------------------------------------------------------------------------
+llm:
+  # 走 OpenAI 兼容网关。openevolve 0.3.2 只内置 openai / claude_code 两种
+  # provider，所以必须显式写 openai + 自定义 api_base。
+  provider: "openai"
+
+  # 自建网关（2026-09-23 实测：该地址 /v1/models 只返回一个模型）。
+  # 注意：openevolve **只对 api_key 字段**做 ${VAR} 环境变量展开，
+  # 所以 api_base 必须直接写死，不能写成 ${...}。
+  api_base: "https://api.toskaxy.xyz/v1"
+
+  # 密钥从环境变量注入。**不要把真实 key 写进本文件**（本文件会进 git）。
+  # run.ps1 会先读取 evolve/.env 把 DEEPSEEK_API_KEY 设进环境变量。
+  api_key: "${DEEPSEEK_API_KEY}"
+
+  # 模型名必须与网关 /v1/models 返回的一致。实测该网关当前只提供这一个。
+  # run.ps1 启动时会打印实际可用列表，以那个为准。
+  models:
+    # ⚠ deepseek-v4.1-flash 是**推理模型**：响应里带 reasoning 字段，
+    #   reasoning_tokens 也计入 completion_tokens。因此 max_tokens 必须给足，
+    #   否则推理会吃掉全部配额、content 直接为空（实测 max_tokens=16 时即如此）。
+    - name: "deepseek-v4.1-flash"
+      weight: 1.0
+
+  temperature: 0.7
+  max_tokens: 16384      # 推理 + 代码生成的总预算；实测网关接受 16384 / 32768
+  timeout: 300           # 推理模型单次响应较慢，给足超时
+  retries: 3
+  retry_delay: 5
+
+# ---------------------------------------------------------------------------
+# 提示词
+# ---------------------------------------------------------------------------
+prompt:
+  template_dir: "prompts"
+  # 参考的优质程序数量。任务里"好策略"的形态比较集中（单调、平滑、量纲正确），
+  # 参考太多反而会让 LLM 盲目拼贴，取 3 比较合适。
+  num_top_programs: 3
+  num_diverse_programs: 2
+  # 把评估器的 artifacts（逐域明细表 + α 指数）注入提示词。
+  # 这是形成"评估 → 改进"闭环的关键，关掉的话 LLM 只看得到一个总分。
+  include_artifacts: true
+  max_artifact_bytes: 24576
+  use_template_stochasticity: true
+
+# ---------------------------------------------------------------------------
+# 程序数据库（MAP-Elites + 岛屿模型）
+# ---------------------------------------------------------------------------
+database:
+  in_memory: false
+  db_path: "openevolve_db"
+  log_prompts: true
+
+  # 把种群按「最差房间精度 × k 的离散度」二维分箱。
+  #   worst_room_miou : 鲁棒性（最差验证房间的 mIoU），与适应度不同维度
+  #   k_spread        : 策略挑出的 k 的取值范围（0 = 完全不随房间变）
+  # 后者是**行为描述量**而不是分数：它让"恒定策略"与"自适应策略"各自占据
+  # 自己的格子，从而逼着搜索把两种形态都探索到，而不是早早收敛到一档。
+  # 这两个名字必须与 evaluator 返回的 metrics 键完全一致。
+  feature_dimensions: ["worst_room_miou", "k_spread"]
+  feature_bins: 5
+
+  population_size: 60
+  num_islands: 3
+  migration_interval: 25
+  migration_rate: 0.15
+  # 多样性参考集大小。策略函数很短，20 足够区分"结构上不同"的实现。
+  diversity_reference_size: 20
+
+# ---------------------------------------------------------------------------
+# 评估器
+# ---------------------------------------------------------------------------
+evaluator:
+  # 单次评估是**查表 + 平均**，毫秒级（见 evolve/evaluator.py 的说明）。
+  # 120s 很宽松，只用来兜住 LLM 写出病态代码（如死循环）的情况。
+  timeout: 120
+  max_retries: 3
+  # 关掉级联评估：它需要 evaluator 定义 evaluate_stage1，本评估器没有。
+  # 开着只会让 openevolve 每次启动都告警，并多走一次无用的分支。
+  cascade_evaluation: false
+
+# ---------------------------------------------------------------------------
+# 早停
+# ---------------------------------------------------------------------------
+# early_stopping_metric 必须与 evaluator 的适应度入口一致。
+# 留空表示不启用早停（第一轮验证建议跑满，便于观察完整轨迹）。
+early_stopping_metric: "combined_score"
+early_stopping_patience: null
+convergence_threshold: 0.001
+
+# ---------------------------------------------------------------------------
+# 其他
+# ---------------------------------------------------------------------------
+random_seed: 42

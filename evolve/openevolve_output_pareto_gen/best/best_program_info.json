@@ -1,0 +1,21 @@
+{
+  "id": "508252c8-1265-4f81-82b1-6f10711cb0c8",
+  "generation": 3,
+  "iteration": 0,
+  "timestamp": 1790316182.3820252,
+  "parent_id": "40f72bcf-94b0-4ab0-b30a-5b8fdee9f5f1",
+  "metrics": {
+    "combined_score": 0.4216466100279,
+    "mean_room_miou": 0.40906166356269064,
+    "delta_vs_base": 0.07201747286978277,
+    "cost_ms": 24.38,
+    "log10_cost": 1.387033701282363,
+    "peak_mib": 433.5,
+    "n_candidates": 63.0,
+    "n_distinct": 1.0,
+    "speedup_vs_base": 4.258408531583265,
+    "is_synthetic": 0.0
+  },
+  "language": "python",
+  "saved_at": 1790316727.5405424
+}

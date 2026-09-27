@@ -1,0 +1,20 @@
+{
+  "id": "93fbebc5-5db6-4943-90c4-2a0d1e9f448f",
+  "generation": 1,
+  "iteration": 1,
+  "timestamp": 1790314026.173331,
+  "parent_id": "eac28fdc-9167-40bf-bcd0-b88cb5761289",
+  "metrics": {
+    "combined_score": 0.4216466100279,
+    "mean_room_miou": 0.40906166356269064,
+    "delta_vs_base": 0.07201747286978277,
+    "cost_ms": 24.38,
+    "log10_cost": 1.387033701282363,
+    "peak_mib": 433.5,
+    "n_candidates": 63.0,
+    "n_distinct": 1.0,
+    "speedup_vs_base": 4.258408531583265
+  },
+  "language": "python",
+  "saved_at": 1790314572.6291292
+}

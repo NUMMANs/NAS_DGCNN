@@ -1,0 +1,88 @@
+# OpenEvolve 配置（**精度 × 成本 双目标**）
+#
+# 与另两份配置的关系：
+#   config.yaml          k 空间（已榨干，留作历史）
+#   config_arch.yaml     架构空间（池化/图位置/容量，已证零交互）
+#   config_pareto.yaml   ← 本文件：精度 × 成本双目标（**当前主线**）
+#
+# 为什么换到这里：前两个空间的候选**成本几乎相同**，MAP-Elites 的 `cost_rel`
+# 维度一直空转（所有点落同一格）。而实测换几何表示后成本跨 30 倍
+# （voxel25_z8 约 3 ms/step ~ points 104 ms/step），双目标第一次有真实差异可探索。
+#
+# 字段名与 openevolve 0.3.2 的 config.py 严格对齐。
+
+# ---------------------------------------------------------------------------
+# 进化规模
+# ---------------------------------------------------------------------------
+max_iterations: 60
+
+# ---------------------------------------------------------------------------
+# LLM
+# ---------------------------------------------------------------------------
+llm:
+  provider: "openai"
+  api_base: "https://api.toskaxy.xyz/v1"
+  api_key: "${DEEPSEEK_API_KEY}"
+  models:
+    - name: "deepseek-v4.1-flash"
+      weight: 1.0
+  temperature: 0.7
+  max_tokens: 16384
+  timeout: 300
+  retries: 3
+  retry_delay: 5
+
+# ---------------------------------------------------------------------------
+# 提示词
+# ---------------------------------------------------------------------------
+prompt:
+  template_dir: "prompts"
+  num_top_programs: 3
+  num_diverse_programs: 2
+  include_artifacts: true
+  max_artifact_bytes: 24576
+  use_template_stochasticity: true
+
+# ---------------------------------------------------------------------------
+# 程序数据库（MAP-Elites + 岛屿模型）
+# ---------------------------------------------------------------------------
+database:
+  in_memory: false
+  db_path: "openevolve_db_pareto"
+  log_prompts: true
+
+  # 二维行为分箱 = **精度 × 成本**（成本取 log10，因为跨 3 个数量级）：
+  #   mean_room_miou : 精度轴 —— 鲁棒精度
+  #   log10_cost     : 成本轴 —— log10(ms/step)
+  # 这两个维度都有**真实差异**（实测精度 0.329~0.3885、成本 3~104 ms），
+  # 所以 MAP-Elites 能真正铺开 Pareto 前沿，而不是所有个体挤在一格。
+  # ⚠ 名字必须与 evaluator_pareto.py 返回的 metrics 键完全一致。
+  feature_dimensions: ["mean_room_miou", "log10_cost"]
+  feature_bins: 5
+
+  population_size: 60
+  num_islands: 3
+  migration_interval: 25
+  migration_rate: 0.15
+  diversity_reference_size: 20
+
+# ---------------------------------------------------------------------------
+# 评估器
+# ---------------------------------------------------------------------------
+evaluator:
+  # 查表 + 标量化，毫秒级。120s 只为兜住 LLM 写出的病态代码（如死循环）。
+  timeout: 120
+  max_retries: 3
+  cascade_evaluation: false
+
+# ---------------------------------------------------------------------------
+# 早停
+# ---------------------------------------------------------------------------
+early_stopping_metric: "combined_score"
+early_stopping_patience: null
+convergence_threshold: 0.001
+
+# ---------------------------------------------------------------------------
+# 其他
+# ---------------------------------------------------------------------------
+random_seed: 42
